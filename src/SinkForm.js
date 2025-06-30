@@ -128,11 +128,22 @@ const SinkForm = ({ sinkData, onInputChange, onConfigChange, getAvailableDataset
             label="Database Type"
             onChange={(e) => onConfigChange('db_type', e.target.value)}
           >
-            {["PostgreSQL", "MySQL", "SQL Server", "Oracle"].map(option => (
+            {["PostgreSQL", "MySQL", "SQL Server", "Oracle", "Hive"].map(option => (
               <MenuItem key={option} value={option}>{option}</MenuItem>
             ))}
           </Select>
         </FormControl>
+        {/* New field for Schema Name */}
+        <TextField
+          label="Schema Name (Optional)"
+          variant="outlined"
+          fullWidth
+          size="small"
+          value={sinkData.config.schema_name || ''}
+          onChange={(e) => onConfigChange('schema_name', e.target.value)}
+          sx={{ mb: 2 }}
+          placeholder="e.g., public or default"
+        />
         <TextField
           label="Target Table Name"
           variant="outlined"

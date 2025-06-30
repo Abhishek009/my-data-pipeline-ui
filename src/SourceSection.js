@@ -110,6 +110,14 @@ const SourceSection = ({ sources, addSource, editSource, removeSource, getAvaila
     setEditingSourceData(prev => ({ ...prev, schema: newSchema }));
   }, []);
 
+  // New memoized callback for handling config changes in the NEW source dialog
+  const handleNewSourceConfigChange = useCallback((configField, value) => {
+    setNewSourceData(prev => ({
+      ...prev,
+      config: { ...prev.config, [configField]: value }
+    }));
+  }, [setNewSourceData]); // Dependency array ensures it only recreates if setNewSourceData changes
+
   // This handles changes related to Database (SQL) source type for both new and edit dialogs.
   const handleTableQueryOptionChange = useCallback((currentData, setter, value) => {
     setter(prev => {
@@ -150,7 +158,7 @@ const SourceSection = ({ sources, addSource, editSource, removeSource, getAvaila
         {sources.map((source) => (
           <Card
             key={source.id}
-            sx={{ maxWidth: 300, width: '100%', cursor: 'pointer', '&:hover': { boxShadow: 6 } }}
+            sx={{ maxWidth: 350, width: '100%', cursor: 'pointer', '&:hover': { boxShadow: 6 } }}
             onClick={() => openEditDialog(source)}
           >
             <CardContent>
@@ -182,7 +190,7 @@ const SourceSection = ({ sources, addSource, editSource, removeSource, getAvaila
             <SourceForm
               sourceData={newSourceData}
               onInputChange={(field, value) => setNewSourceData(prev => ({ ...prev, [field]: value }))}
-              onConfigChange={(configField, value) => setNewSourceData(prev => ({ ...prev, config: { ...prev.config, [configField]: value } }))}
+              onConfigChange={handleNewSourceConfigChange} // Using the memoized callback here
               onSchemaChange={(newData) => setNewSourceData(prev => ({ ...prev, schema: newData }))}
               onTableQueryOptionChange={(currentData, value) => handleTableQueryOptionChange(currentData, setNewSourceData, value)}
               uniqueIdPrefix="new-source"
