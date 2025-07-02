@@ -24,13 +24,52 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import EditIcon from '@mui/icons-material/Edit'; // For the edit button on cards
+import EditIcon from '@mui/icons-material/Edit'; 
 import DataEditor from './DataEditor';
-
+import { loginUser,getConnection } from '../src/api/DataApi.tsx';
 
 const SourceForm = ({ sourceData, onInputChange, onConfigChange, onSchemaChange, onTableQueryOptionChange, uniqueIdPrefix, isNew }) => {
   const [isLoadingDbDetails, setIsLoadingDbDetails] = useState(false);
   const [dbDetailsError, setDbDetailsError] = useState(null);
+  const [dbTypes, setDbTypes] = useState([]); // New state for fetched DB types
+  const [isDbTypesLoading, setIsDbTypesLoading] = useState(false); // New state for DB types loading
+  const [dbTypesError, setDbTypesError] = useState(null); // New state for DB types error
+
+
+  // Effect to fetch database types dynamically
+  useEffect(() => {
+    let isMounted = true;
+    const fetchDbTypes = async () => {
+      if (sourceData.type === "Database (SQL)") {
+        setIsDbTypesLoading(true);
+        setDbTypesError(null);
+        try {
+          const response = await getConnection();
+          console.log(response.connectionlist)
+          if (isMounted) {
+            setDbTypes(response.connectionlist || []);
+          }
+        } catch (error) {
+          console.error("Failed to fetch database types:", error.response ? error.response.data : error.message);
+          if (isMounted) {
+            setDbTypesError(error.response?.data?.message || "Failed to load database types.");
+          }
+        } finally {
+          if (isMounted) {
+            setIsDbTypesLoading(false);
+          }
+        }
+      } else {
+        if (isMounted) {
+          setDbTypes([]); // Clear types if not a DB source
+          setIsDbTypesLoading(false);
+          setDbTypesError(null);
+        }
+      }
+    };
+    fetchDbTypes();
+    return () => { isMounted = false; };
+  }, [sourceData.type]); // Dependency on sourceData.type
 
   // This effect simulates fetching database details and handles loading state.
   useEffect(() => {
@@ -45,16 +84,16 @@ const SourceForm = ({ sourceData, onInputChange, onConfigChange, onSchemaChange,
             await new Promise(resolve => setTimeout(resolve, 800)); // Simulate API call
             let details = {};
             switch (sourceData.config.db_type) {
-              case 'PostgreSQL': details = { host: 'localhost', port: 5432, database: 'postgres_db', schema_name: 'public' }; break;
-              case 'MySQL': details = { host: 'localhost', port: 3306, database: 'mysql_db', schema_name: 'mydb' }; break;
-              case 'SQL Server': details = { host: 'localhost', port: 1433, database: 'sqlserver_db', schema_name: 'dbo' }; break;
-              case 'Oracle': details = { host: 'localhost', port: 1521, database: 'oracle_sid', schema_name: 'system' }; break;
-              case 'Hive': details = { host: 'localhost', port: 10000, database: 'default', schema_name: 'default' }; break;
-              default: details = { host: '', port: '', database: '', schema_name: '' }; break;
+              case 'PostgreSQL': details = { database: 'postgres_db', schema_name: 'public' }; break;
+              case 'MySQL': details = { database: 'mysql_db', schema_name: 'mydb' }; break;
+              case 'SQL Server': details = { database: 'sqlserver_db', schema_name: 'dbo' }; break;
+              case 'Oracle': details = { database: 'oracle_sid', schema_name: 'system' }; break;
+              case 'Hive': details = { database: 'default', schema_name: 'default' }; break;
+              case 'Snowflake': details = { database: 'snowflake_db', schema_name: 'public' }; break;
+              default: details = { database: '', schema_name: '' }; break;
             }
             if (isMounted) { // Only update if component is still mounted
-              onConfigChange('host', details.host);
-              onConfigChange('port', details.port);
+              // Removed host and port from here as per request
               onConfigChange('database', details.database);
               onConfigChange('schema_name', details.schema_name);
             }
@@ -73,8 +112,8 @@ const SourceForm = ({ sourceData, onInputChange, onConfigChange, onSchemaChange,
           if (isMounted) {
             setIsLoadingDbDetails(false);
             setDbDetailsError(null);
-            onConfigChange('host', '');
-            onConfigChange('port', '');
+            onConfigChange('db_type', ''); // Ensure db_type is reset
+            // Removed host and port from here as per request
             onConfigChange('database', '');
             onConfigChange('schema_name', '');
             // Also reset table_name/sql_query if they exist to reflect the cleared state
@@ -88,8 +127,7 @@ const SourceForm = ({ sourceData, onInputChange, onConfigChange, onSchemaChange,
           setIsLoadingDbDetails(false);
           setDbDetailsError(null);
           onConfigChange('db_type', ''); // Ensure db_type is reset
-          onConfigChange('host', '');
-          onConfigChange('port', '');
+          // Removed host and port from here as per request
           onConfigChange('database', '');
           onConfigChange('schema_name', '');
           onConfigChange('table_name', undefined);
@@ -190,32 +228,29 @@ const SourceForm = ({ sourceData, onInputChange, onConfigChange, onSchemaChange,
         <>
           <FormControl fullWidth size="small" sx={{ mb: 2 }}>
             <InputLabel>Database Type</InputLabel>
-            <Select
-              value={sourceData.config.db_type || ''} // Set default value to empty string
-              label="Database Type"
-              onChange={(e) => onConfigChange('db_type', e.target.value)}
-            >
-              <MenuItem value="">Select a database type</MenuItem> {/* New initial option */}
-              {["PostgreSQL", "MySQL", "SQL Server", "Oracle", "Hive"].map(option => (
-                <MenuItem key={option} value={option}>{option}</MenuItem>
-              ))}
-            </Select>
+            {isDbTypesLoading ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', py: 1 }}>
+                <CircularProgress size={20} sx={{ mr: 1 }} />
+                <Typography variant="body2" color="text.secondary">Loading database types...</Typography>
+              </Box>
+            ) : dbTypesError ? (
+              <Typography variant="body2" color="error">{dbTypesError}</Typography>
+            ) : (
+              <Select
+                value={sourceData.config.db_type || ''} // Set default value to empty string
+                label="Database Type"
+                onChange={(e) => onConfigChange('db_type', e.target.value)}
+              >
+                <MenuItem value="">Select a database type</MenuItem> {/* New initial option */}
+                {dbTypes.map(option => (
+                  <MenuItem key={option} value={option}>{option}</MenuItem>
+                ))}
+              </Select>
+            )}
           </FormControl>
 
-          {isLoadingDbDetails && (
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', my: 2 }}>
-              <CircularProgress size={24} sx={{ mr: 2 }} />
-              <Typography variant="body2" color="text.secondary">Loading database details...</Typography>
-            </Box>
-          )}
-
-          {dbDetailsError && (
-            <Typography variant="body2" color="error" sx={{ my: 2 }}>
-              {dbDetailsError}
-            </Typography>
-          )}
-          
-          <TextField
+          {/* Removed Host and Port TextFields */}
+          {/* <TextField
             label="Host"
             variant="outlined"
             fullWidth
@@ -230,10 +265,24 @@ const SourceForm = ({ sourceData, onInputChange, onConfigChange, onSchemaChange,
             fullWidth
             size="small"
             type="number"
-            value={sourceData.config.port || ''} // Default port is set by fetchMockDbDetails
+            value={sourceData.config.port || ''}
             onChange={(e) => onConfigChange('port', parseInt(e.target.value))}
             sx={{ mb: 2 }}
-          />
+          /> */}
+
+          {isLoadingDbDetails && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', my: 2 }}>
+              <CircularProgress size={24} sx={{ mr: 2 }} />
+              <Typography variant="body2" color="text.secondary">Loading database details...</Typography>
+            </Box>
+          )}
+
+          {dbDetailsError && (
+            <Typography variant="body2" color="error" sx={{ my: 2 }}>
+              {dbDetailsError}
+            </Typography>
+          )}
+          
           <TextField
             label="Database Name"
             variant="outlined"

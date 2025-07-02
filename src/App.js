@@ -31,6 +31,9 @@ import PipelineMetadata from './PipelineMetadata';
 import ConfigViewer from './ConfigViewer';
 import GlobalActions from './GlobalActions';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle'; // Added for default avatar icon
+
+const settings = ['Profile', 'Account', 'Dashboard', 'Logout'];
+
 const App = () => {
   const [pipelineConfig, setPipelineConfig] = useState({
     pipeline_name: "My New Data Pipeline",
@@ -204,6 +207,18 @@ const App = () => {
     handleMenuClose(); // Close the menu after logging out
   }, [showMessage, handleMenuClose]);
 
+  // Placeholder for Profile and Settings actions
+  const handleProfileClick = useCallback(() => {
+    showMessage("Profile clicked!", "info");
+    handleMenuClose();
+  }, [showMessage, handleMenuClose]);
+
+  const handleSettingsClick = useCallback(() => {
+    showMessage("Settings clicked!", "info");
+    handleMenuClose();
+  }, [showMessage, handleMenuClose]);
+
+
   if (!user) {
     return <LoginPage onLoginSuccess={setUser} onMessage={showMessage} />;
   }
@@ -253,6 +268,7 @@ const App = () => {
               </Avatar>
             </IconButton>
             <Menu
+            sx={{ mt: '45px' }}
               id="menu-appbar"
               anchorEl={anchorEl}
               anchorOrigin={{
@@ -264,9 +280,13 @@ const App = () => {
                 vertical: 'top',
                 horizontal: 'right',
               }}
-              open={menuOpen}
+             //open={menuOpen}
+              open={Boolean(anchorEl)}
               onClose={handleMenuClose}
             >
+             
+              <MenuItem onClick={handleProfileClick}>Profile</MenuItem>
+              <MenuItem onClick={handleSettingsClick}>Settings</MenuItem>
               <MenuItem onClick={handleLogout}>Logout</MenuItem>
             </Menu>
           </Box>

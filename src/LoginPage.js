@@ -1,4 +1,7 @@
 import React, { useCallback, useState } from 'react';
+//import { loginUser } from './api/DataApi'; // Adjust the import path as necessary
+import { loginUser } from '../src/api/DataApi.tsx';
+
 import {
   Typography,
   Box,
@@ -7,31 +10,88 @@ import {
   Paper,
 } from '@mui/material';
 
+// const client = {
+//   post: async (url, data, config) => {
+//     console.log(`Mock Axios POST to: ${url}`);
+//     console.log('Request Data:', data);
+//     await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network delay
+
+//     // Simulate different API responses based on credentials
+//     if (data.email === "qwerty" && data.password === "asd") {
+//       return {
+//         data: { success: true, user: { email: data.email, uid: 'user-abc-123', token: 'mock-jwt-token' } },
+//         status: 200,
+//         statusText: 'OK',
+//         headers: {},
+//         config: config,
+//         request: {}
+//       };
+//     } else {
+//       // Simulate an error response (e.g., 401 Unauthorized)
+//       // Axios typically throws an error object with a 'response' property for non-2xx codes
+//       throw {
+//         response: {
+//           data: { success: false, message: 'Invalid credentials provided.' },
+//           status: 401,
+//           statusText: 'Unauthorized',
+//           headers: {},
+//           config: config,
+//           request: {}
+//         }
+//       };
+//     }
+//   }
+// };
+
+const config = {
+  headers: {
+    'Content-Type': 'application/json'
+  }
+};
+
+// // The loginUser function provided by the user
+// export const loginUser = async(email,password) => {
+//   try{
+//     const data = {
+//         "email": email,
+//         "password": password,
+//     };
+    
+//     const response = await client.post("/login",data,config)
+//   console.log("======",response.data )
+//     return response.data; 
+//   }catch(error) {
+//     // Propagate a consistent error object that handleLogin can use
+//     console.error("Error logging user:",error.response ? error.response.data : error.message)
+//     throw error.response ? error.response.data : { success: false, message: error.message || "Network error or unexpected issue." };
+//   }
+// }
+
 const LoginPage = ({ onLoginSuccess, onMessage }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Hardcoded credentials for testing
-  const HARDCODED_USERNAME = "test@example.com";
-  const HARDCODED_PASSWORD = "password123";
-
   const handleLogin = useCallback(async () => {
     setLoading(true);
     try {
-      if (email === HARDCODED_USERNAME && password === HARDCODED_PASSWORD) {
-        // Simulate a successful login
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
+
+      const result = await loginUser(email,password) 
+
+   
+      console.log("Response is ", result);
+      console.log(result.success)
+      if (result.success) {
         onMessage('Login successful!', 'success');
-        // Create a mock user object for the App component
-        onLoginSuccess({ email: HARDCODED_USERNAME, uid: 'hardcoded-user-id-123' });
+        // Store user info in localStorage for session persistence
+        localStorage.setItem('user', JSON.stringify(result.user));
+        onLoginSuccess(result.user); // Pass the user object to App component
       } else {
-        onMessage('Invalid username or password.', 'error');
+        onMessage(result.message || 'Login failed. Please try again.', 'error');
       }
+
     } catch (error) {
-      // This catch block might not be strictly necessary for hardcoded login,
-      // but is good practice for future API integration.
-      onMessage('An unexpected error occurred during login.', 'error');
+      onMessage('An unexpected error occurred during login. Please check your network.', 'error');
       console.error("Login error:", error);
     } finally {
       setLoading(false);
