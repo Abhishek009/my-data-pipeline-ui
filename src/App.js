@@ -1,388 +1,457 @@
-import React, { useCallback, useState,useEffect } from 'react';
-import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
+import React, { useState, useEffect, useCallback } from 'react';
+import ReactFlow, {
+  MiniMap,
+  Controls,
+  Background,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  Handle, // Import Handle
+  Position, // Import Position
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+// Removed: import yaml from 'js-yaml'; // No longer needed for frontend parsing
 
-import LoginPage from './LoginPage'; // Import the hardcoded login page component
 // Material-UI Imports
-import {
-  Typography,
-  Box,
-  Tabs,
-  Tab,TextField,Button,
-  CircularProgress,
-  Paper,IconButton,MenuItem,
-  Snackbar, // Added for messages
-  Alert, // Added for message display within Snackbar
-  Avatar, // Added for the avatar icon
-  Menu // Added for the dropdown menu
-} from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import DeleteIcon from '@mui/icons-material/Delete';
-import AddIcon from '@mui/icons-material/Add';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
-import DownloadIcon from '@mui/icons-material/Download';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import EditIcon from '@mui/icons-material/Edit'; // For the edit button on cards
-import ExitToAppIcon from '@mui/icons-material/ExitToApp';
-import SinkSection from './SinkSection';
-import SourceSection from './SourceSection';
-import TransformationSection from './TransformationSection';
-import PipelineMetadata from './PipelineMetadata';
-import ConfigViewer from './ConfigViewer';
-import GlobalActions from './GlobalActions';
-import AccountCircleIcon from '@mui/icons-material/AccountCircle'; // Added for default avatar icon
+import { Box, Paper, Typography, Button, Grid } from '@mui/material';
 
-const settings = ['Profile', 'Account', 'Dashboard', 'Logout'];
+
+// Define custom node styles for different types outside the component
+const nodeStyles = {
+  input: {
+    backgroundColor: '#D1FAE5', // Green-ish
+    color: '#065F46',
+    border: '1px solid #34D399',
+    borderRadius: '8px',
+    padding: '10px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+  transform: {
+    backgroundColor: '#DBEAFE', // Blue-ish
+    color: '#1E40AF',
+    border: '1px solid #60A5FA',
+    borderRadius: '8px',
+    padding: '10px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+  output: {
+    backgroundColor: '#FFEDD5', // Orange-ish
+    color: '#9A3412',
+    border: '1px solid #FB923C',
+    borderRadius: '8px',
+    padding: '10px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+};
+
+// Custom Input Node Component
+const InputNode = ({ data }) => {
+  return (
+    <div style={nodeStyles.input}>
+      <div>{data.label}</div>
+      {/* Single source handle at the right */}
+      <Handle type="source" position={Position.Right} id="outputHandle" style={{ background: '#555' }} />
+    </div>
+  );
+};
+
+// Custom Transform Node Component
+const TransformNode = ({ data }) => {
+  // data.tInputs is an array of input df-names for this transform
+  // We create a target handle for each input
+  return (
+    <div style={nodeStyles.transform}>
+      {/* Multiple target handles at the left for inputs, distributed vertically */}
+      {data.tInputs && data.tInputs.map((inputDfName, index) => (
+        <Handle
+          key={`target-${inputDfName}`} // Unique key for React list rendering
+          type="target"
+          position={Position.Left}
+          id={`target-${inputDfName}`} // Unique ID for each target handle
+          // Distribute handles vertically
+          style={{ background: '#555', top: `${(index + 1) * 100 / (data.tInputs.length + 1)}%` }}
+        />
+      ))}
+      <div>{data.label}</div>
+      {/* Single source handle at the right for output */}
+      <Handle type="source" position={Position.Right} id="outputHandle" style={{ background: '#555' }} />
+    </div>
+  );
+};
+
+// Custom Output Node Component
+const OutputNode = ({ data }) => {
+  return (
+    <div style={nodeStyles.output}>
+      {/* Single target handle at the left */}
+      <Handle type="target" position={Position.Left} id="inputHandle" style={{ background: '#555' }} />
+      <div>{data.label}</div>
+    </div>
+  );
+};
+
+// Define nodeTypes object to map custom node names to components
+const nodeTypes = {
+  inputNode: InputNode,
+  transformNode: TransformNode,
+  outputNode: OutputNode,
+};
 
 const App = () => {
-  const [pipelineConfig, setPipelineConfig] = useState({
-    pipeline_name: "My New Data Pipeline",
-    description: "",
-    sources: [],
-    transformations: [],
-    sinks: []
-  });
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [error, setError] = useState(null);
+  const [selectedNodeData, setSelectedNodeData] = useState(null); // State to store selected node data
 
-  const [activeTab, setActiveTab] = useState(0);
-  const [user, setUser] = useState(null); // Firebase User object or mock user
-  const [snackbarOpen, setSnackbarOpen] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [snackbarSeverity, setSnackbarSeverity] = useState('info'); // 'success', 'error', 'warning', 'info'
-  const [anchorEl, setAnchorEl] = useState(null); // For avatar menu
-  const menuOpen = Boolean(anchorEl);
-
-  const showMessage = useCallback((message, severity = 'info') => {
-    setSnackbarMessage(message);
-    setSnackbarSeverity(severity);
-    setSnackbarOpen(true);
-  }, []);
-
-  const handleSnackbarClose = (event, reason) => {
-    if (reason === 'clickaway') {
-      return;
-    }
-    setSnackbarOpen(false);
-  };
-
-  // Simplified authentication flow for hardcoded login
   useEffect(() => {
-    // No persistent session for hardcoded login, user is null initially.
-  }, []);
-
-  // Handler for opening the avatar menu
-  const handleAvatarClick = useCallback((event) => {
-    setAnchorEl(event.currentTarget);
-  }, []);
-
-  // Handler for closing the avatar menu
-  const handleMenuClose = useCallback(() => {
-    setAnchorEl(null);
-  }, []);
-
-  // Utility function to get available datasets
-  const getAvailableDatasets = useCallback(() => {
-    const datasets = [];
-    pipelineConfig.sources.forEach(src => datasets.push(src.name));
-    pipelineConfig.transformations.forEach(xform => {
-      if (xform.output_dataset) datasets.push(xform.output_dataset);
-    });
-    return Array.from(new Set(datasets));
-  }, [pipelineConfig.sources, pipelineConfig.transformations]);
-
-
-  // --- CRUD Operations for Sources, Transformations, Sinks ---
-  const addSource = useCallback((newSource) => {
-    setPipelineConfig(prev => ({
-      ...prev,
-      sources: [...prev.sources, newSource]
-    }));
-  }, []);
-
-  const editSource = useCallback((updatedSource) => {
-    setPipelineConfig(prev => ({
-      ...prev,
-      sources: prev.sources.map(s => s.id === updatedSource.id ? updatedSource : s)
-    }));
-  }, []);
-
-  const removeSource = useCallback((idToRemove) => {
-    setPipelineConfig(prev => ({
-      ...prev,
-      sources: prev.sources.filter(src => src.id !== idToRemove)
-    }));
-  }, []);
-
-  const addTransformation = useCallback((newTransform) => {
-    setPipelineConfig(prev => ({
-      ...prev,
-      transformations: [...prev.transformations, newTransform]
-    }));
-  }, []);
-
-  const editTransformation = useCallback((updatedTransform) => {
-    setPipelineConfig(prev => ({
-      ...prev,
-      transformations: prev.transformations.map(t => t.id === updatedTransform.id ? updatedTransform : t)
-    }));
-  }, []);
-
-  const removeTransformation = useCallback((idToRemove) => {
-    setPipelineConfig(prev => ({
-      ...prev,
-      transformations: prev.transformations.filter(xform => xform.id !== idToRemove)
-    }));
-  }, []);
-
-  const addSink = useCallback((newSink) => {
-    setPipelineConfig(prev => ({
-      ...prev,
-      sinks: [...prev.sinks, newSink]
-    }));
-  }, []);
-
-  const editSink = useCallback((updatedSink) => {
-    setPipelineConfig(prev => ({
-      ...prev,
-      sinks: prev.sinks.map(s => s.id === updatedSink.id ? updatedSink : s)
-    }));
-  }, []);
-
-  const removeSink = useCallback((idToRemove) => {
-    setPipelineConfig(prev => ({
-      ...prev,
-      sinks: prev.sinks.filter(sink => sink.id !== idToRemove)
-    }));
-  }, []);
-
-
-  const simulateRunPipeline = useCallback(() => {
-    if (pipelineConfig.sources.length || pipelineConfig.transformations.length || pipelineConfig.sinks.length) {
-      showMessage("Pipeline configuration submitted for simulated execution! Check console for JSON.", "info");
-      console.log("Simulated Backend Payload:", JSON.stringify(pipelineConfig, null, 2));
-    } else {
-      showMessage("Please define at least one source, transformation, or sink before running the pipeline.", "warning");
-    }
-  }, [pipelineConfig, showMessage]);
-
-  const loadConfigFromFile = useCallback((e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const uploadedData = JSON.parse(event.target.result);
-          if (uploadedData.pipeline_name !== undefined && uploadedData.sources !== undefined &&
-              uploadedData.transformations !== undefined && uploadedData.sinks !== undefined) {
-            setPipelineConfig(uploadedData);
-            showMessage("Pipeline configuration loaded successfully!", "success");
-          } else {
-            showMessage("Invalid JSON configuration. Missing expected keys.", "error");
-          }
-        } catch (error) {
-          showMessage("Invalid JSON file. Please upload a valid JSON.", "error");
-          console.error("Error loading JSON:", error);
+    // Fetch the generated config when the component mounts
+    fetch('/pipelineConfig.json') // This path is relative to where your React app is served
+      .then(response => {
+        if (!response.ok) {
+          // If the file is not found (e.g., in dev mode without generated config),
+          // or if there's an HTTP error, start with an empty pipeline.
+          console.warn('pipelineConfig.json not found or could not be loaded. Starting with empty pipeline.');
+          setError('Pipeline configuration not found. Please ensure the Scala generator has run and the JSON is in the correct location.');
+          return { nodes: [], edges: [], pipelineMetadata: { name: 'New Pipeline', description: 'Start defining your pipeline here!' } };
         }
-      };
-      reader.readAsText(file);
+        return response.json();
+      })
+      .then(data => {
+        setNodes(data.nodes || []);
+        setEdges(data.edges || []);
+        // Assuming pipelineMetadata exists in the fetched JSON
+        // If not, provide sensible defaults
+        // Note: pipelineName and description are not directly used in the current UI,
+        // but are kept for consistency with the Scala model.
+        // You might want to display them somewhere like a header.
+        // setPipelineName(data.pipelineMetadata?.name || 'New Pipeline');
+        // setDescription(data.pipelineMetadata?.description || 'Start defining your pipeline here!');
+        setError(null); // Clear any previous errors on successful load
+      })
+      .catch(error => {
+        console.error('Failed to load pipelineConfig.json:', error);
+        setError(`Failed to load pipeline configuration: ${error.message}. Please check server and file path.`);
+        setNodes([]);
+        setEdges([]);
+      });
+  }, []); // Empty dependency array means this runs once on mount
+
+
+  // Handle node click to display details in the dedicated space
+  const onNodeClick = useCallback((event, node) => {
+    setSelectedNodeData(node);
+  }, []);
+
+  const renderInfoPanelContent = (node) => {
+    if (!node || !node.data || !node.data.details) {
+      return (
+        <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary', width: '90%' }}>
+          <Typography variant="h6" component="p" sx={{ mb: 1, color: 'inherit' }}>
+            Select a Node for Details
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'inherit' }}>
+            Click on any node in the diagram to view its details here.
+          </Typography>
+        </Box>
+      );
     }
-  }, [showMessage]);
 
-  const downloadConfig = useCallback(() => {
-    const filename = `${pipelineConfig.pipeline_name.replace(/ /g, '_').toLowerCase() || 'pipeline'}.json`;
-    const jsonStr = JSON.stringify(pipelineConfig, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [pipelineConfig]);
+    const details = node.data.details;
+    const type = node.type;
+    const config = details.config || {}; // Get the config map, default to empty object if null
 
-  // Handle hardcoded logout
-  const handleLogout = useCallback(() => {
-    setUser(null);
-    showMessage("Logged out successfully.", "info");
-    handleMenuClose(); // Close the menu after logging out
-  }, [showMessage, handleMenuClose]);
+    // Prepare key-value pairs for grid display
+    let infoRows = [];
+    if (type === 'inputNode') {
+      infoRows = [
+        { label: 'Type', value: config.type }, // Access from config
+        { label: 'Identifier', value: config.identifier }, // Access from config
+        config.table && { label: 'Table', value: config.table },
+        config.schema && { label: 'Schema', value: config.schema },
+        config.format && { label: 'Format', value: config.format },
+        config.path && { label: 'Path', value: config.path },
+      ].filter(Boolean);
+    } else if (type === 'transformNode') {
+      infoRows = [
+        { label: 'Input DFs', value: config['t_inputs'] }, // Access from config
+        { label: 'Output DF', value: config.output }, // Access from config
+      ].filter(Boolean);
+    } else if (type === 'outputNode') {
+      infoRows = [
+        { label: 'Type', value: config.type }, // Access from config
+        { label: 'Identifier', value: config.identifier }, // Access from config
+        { label: 'Output Format', value: config.output_format }, // Access from config
+        config.partition && { label: 'Partition', value: config.partition },
+        config.schema && { label: 'Schema', value: config.schema },
+        config.table && { label: 'Table', value: config.table },
+        config.path && { label: 'Path', value: config.path },
+      ].filter(Boolean);
+    }
 
-  // Placeholder for Profile and Settings actions
-  const handleProfileClick = useCallback(() => {
-    showMessage("Profile clicked!", "info");
-    handleMenuClose();
-  }, [showMessage, handleMenuClose]);
-
-  const handleSettingsClick = useCallback(() => {
-    showMessage("Settings clicked!", "info");
-    handleMenuClose();
-  }, [showMessage, handleMenuClose]);
-
-
-  if (!user) {
-    return <LoginPage onLoginSuccess={setUser} onMessage={showMessage} />;
-  }
-
-  return (
-    <Box sx={{
-      p: 2,
-      backgroundColor: '#f0f2f5',
-      minHeight: '100vh',
-      fontFamily: 'Roboto, sans-serif',
-      display: 'flex',       // Enable flex container
-      flexDirection: 'column', // Stack children vertically
-      alignItems: 'center',    // Center children horizontally
-    }}>
-      {/* Header spanning full width */}
-      <Box sx={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        //mb: 0,
-        width: '100%', // Take full width of its parent (the outermost Box)
-        px: 2 // Add some horizontal padding to match the main content's padding
-      }}>
-        {/* Centered Typography component */}
-        <Typography variant="h3" component="h1" gutterBottom
+    return (
+      <Box sx={{ p: 2, position: 'relative', width: '90%' }}>
+        <Typography variant="h6" component="h3" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.dark', textAlign: 'center' }}>
+          {node.data.label.split('\n')[0]}
+        </Typography>
+        <Box
           sx={{
-            color: '#333',
-            flexGrow: 1,      // Allow it to grow and take available space
-            textAlign: 'center', // Center text within its allocated space
-            mb: 0 // Remove bottom margin if gutterBottom is causing issues with vertical alignment
+            display: 'grid',
+            gridTemplateColumns: 'max-content 1fr',
+            gap: 2,
+            alignItems: 'left',
+            mb: 1,
+            px: 1,
           }}
         >
-          SparkDataFlow Web UI
-        </Typography>
-        {user && (
-          <Box>
-            <IconButton
-              aria-label="account of current user"
-              aria-controls="menu-appbar"
-              aria-haspopup="true"
-              onClick={handleAvatarClick}
-              color="inherit"
-              sx={{ p: 0 }} // Remove default padding for IconButton around Avatar
-            >
-              <Avatar sx={{ bgcolor: '#1976d2' }}>
-                {user.email ? user.email[0].toUpperCase() : <AccountCircleIcon />}
-              </Avatar>
-            </IconButton>
-            <Menu
-            sx={{ mt: '45px' }}
-              id="menu-appbar"
-              anchorEl={anchorEl}
-              anchorOrigin={{
-                vertical: 'top',
-                horizontal: 'right',
+          {infoRows.map((row, idx) => (
+            <React.Fragment key={idx}>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 600,
+                  color: '#0e7490',
+                  textAlign: 'left',
+                  pr: 2,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {row.label}:
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: '#334155',
+                  fontWeight: 500,
+                  wordBreak: 'break-all',
+                  background: '#f1f5f9',
+                  borderRadius: 1,
+                  px: 1,
+                  py: 0.5,
+                }}
+              >
+                {row.value}
+              </Typography>
+            </React.Fragment>
+          ))}
+        </Box>
+        {/* Special handling for options/query as a code block */}
+        {type === 'inputNode' && config.option && ( // Access from config
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: 'max-content 1fr',
+            gap: 2,
+            alignItems: 'left',
+            mb: 1,
+            px: 1,
+          }}>
+            <Typography variant="body2"
+            sx={{ fontWeight: 600,
+                  color: '#0e7490',
+                  textAlign: 'left',
+                  pr: 3,
+                  whiteSpace: 'nowrap',}}>
+              Options:
+            </Typography>
+            <Typography
+              component="pre" variant="body2"
+              sx={{
+                bgcolor: '#f0fdfa',
+                p: 1.5,
+                borderRadius: 2,
+                fontSize: '0.85rem',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                border: '1px solid #bae6fd',
+                mt: 0.5,
+                boxShadow: 'inset 0 1px 3px rgba(6,182,212,0.08)',
+                fontFamily: 'monospace',
+                color: '#0e7490',
+
               }}
-              keepMounted
-              transformOrigin={{
-                vertical: 'top',
-                horizontal: 'right',
-              }}
-             //open={menuOpen}
-              open={Boolean(anchorEl)}
-              onClose={handleMenuClose}
             >
-             
-              <MenuItem onClick={handleProfileClick}>Profile</MenuItem>
-              <MenuItem onClick={handleSettingsClick}>Settings</MenuItem>
-              <MenuItem onClick={handleLogout}>Logout</MenuItem>
-            </Menu>
+              {config.option}
+            </Typography>
+          </Box>
+        )}
+        {type === 'transformNode' && config.query && ( // Access from config
+          <Box sx={{ display: 'grid',
+            gridTemplateColumns: 'max-content 1fr',
+            gap: 4,
+            alignItems: 'left',
+            mb: 1,
+            px: 1, }}>
+            <Typography variant="body2" sx={{ fontWeight: 600,
+                  color: '#0e7490',
+                  textAlign: 'left',
+                  pr: 3,
+                  whiteSpace: 'nowrap', }}>
+              Query:
+            </Typography>
+            <Typography
+              component="pre"
+              sx={{
+                 bgcolor: '#f0fdfa',
+                p: 1.5,
+                borderRadius: 2,
+                fontSize: '0.85rem',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                border: '1px solid #bae6fd',
+                mt: 0.5,
+                boxShadow: 'inset 0 1px 3px rgba(6,182,212,0.08)',
+                fontFamily: 'monospace',
+                color: '#0e7490',
+              }}
+            >
+              {config.query}
+            </Typography>
+          </Box>
+        )}
+        {type === 'outputNode' && config.option && ( // Access from config
+          <Box sx={{ display: 'grid',
+            gridTemplateColumns: 'max-content 1fr',
+            gap: 6,
+            alignItems: 'left',
+            mb: 1,
+            px: 1,}}>
+            <Typography variant="body2" sx={{ fontWeight: 600,
+                  color: '#0e7490',
+                  textAlign: 'left',
+                  pr: 3,
+                  whiteSpace: 'nowrap', }}>
+              Options:
+            </Typography>
+            <Typography
+              component="pre"
+              sx={{
+                bgcolor: '#f0fdfa',
+                p: 1.5,
+                borderRadius: 2,
+                fontSize: '0.85rem',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                border: '1px solid #bae6fd',
+                mt: 0.5,
+                boxShadow: 'inset 0 1px 3px rgba(6,182,212,0.08)',
+                fontFamily: 'monospace',
+                color: '#0e7490',
+              }}
+            >
+              {config.option}
+            </Typography>
           </Box>
         )}
       </Box>
+    );
 
-      {/* Main content wrapper, remaining centered */}
-      <Box sx={{ width: '100%', maxWidth: 'lg', mx: 'auto', py: 4 }}>
-        <Typography variant="body1" align="center" color="text.secondary" sx={{ mb:4 }}>
-          Define your data pipeline by configuring sources, transformations, and outputs.
-        </Typography>
 
-        <PipelineMetadata
-          pipelineName={pipelineConfig.pipeline_name}
-          description={pipelineConfig.description}
-          onNameChange={(value) => setPipelineConfig(prev => ({ ...prev, pipeline_name: value }))}
-          onDescriptionChange={(value) => setPipelineConfig(prev => ({ ...prev, description: value }))}
-        />
+  };
 
-        <Paper elevation={3} sx={{ borderRadius: '8px 8px 0 0', overflow: 'hidden', mb: 0 }}>
-          <Tabs
-            value={activeTab}
-            onChange={(e, newValue) => setActiveTab(newValue)}
-            aria-label="pipeline sections tabs"
-            variant="scrollable"
-            scrollButtons="auto"
-            allowScrollButtonsMobile
-            sx={{
-              '& .MuiTabs-indicator': { backgroundColor: '#1976d2' },
-              '& .MuiTab-root': {
-                color: '#555',
-                '&.Mui-selected': {
-                  color: '#1976d2',
-                  backgroundColor: '#e3f2fd',
-                },
-              },
+ return (
+     <div className="flex flex-col h-screen bg-gray-100 font-sans p-4  ">
+       <h1 className="text-3xl font-bold text-gray-800 mb-4 text-center w-full">Data Flow Diagram</h1>
+       {/* Main container for ReactFlow and the info panel */}
+       <div className="flex-grow flex flex-col bg-white rounded-lg shadow-md overflow-hidden" style={{ height: '90vh' }}>
+         {/* ReactFlow component fills most of the height */}
+         <div className="flex-grow" style={{ height: 'calc(100% - 200px)' }}> {/* Fixed height for ReactFlow */}
+           <ReactFlow
+             nodes={nodes}
+             edges={edges}
+             onNodesChange={onNodesChange}
+             onEdgesChange={onEdgesChange}
+             //onConnect={onConnect}
+             onNodeClick={onNodeClick}
+             fitView
+             className="rounded-lg"
+             style={{ width: '100%', height: '100%' }}
+             nodeTypes={nodeTypes}
+           >
+             <MiniMap />
+             <Controls />
+             <Background variant="dots" gap={12} size={1} />
+           </ReactFlow>
+         </div>
+
+
+
+
+           <Paper
+             elevation={16}
+             sx={{
+               width: 'auto',
+               height: '220px',
+               //background: 'linear-gradient(90deg,rgb(197, 215, 218) 0%,rgb(216, 230, 219) 100%)',
+               borderRadius: '8px 8px 0 0',
+               borderTop: '2px solid #06b6d4',
+               boxShadow: '0 -8px 10px 0 rgba(6,182,212,0.18), 0 -1.5px 0 #06b6d4',
+             display: 'flex',
+               flexShrink: 0,
+               overflowY: 'auto',
+               alignItems: 'flex-start',
+              position: 'relative',
+              px: 4,
+              py: 3,
+              gap: 4,
+              zIndex: 10,
+              transition: 'box-shadow 0.2s',
             }}
           >
-            <Tab label="Sources" />
-            <Tab label="Transformations" />
-            <Tab label="Sinks" />
-            <Tab label="Config" />
-          </Tabs>
-        </Paper>
+            <Box
+              sx={{
+                width: '100%',
+                maxWidth: 'auto',
+                mx: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                justifyContent: 'flex-start',
+                height: '100%',
+                overflowY: 'auto',
+                position: 'relative',
+              }}
+            >
+              {/* Close button */}
+               {selectedNodeData && selectedNodeData.data && selectedNodeData.data.details && (
+              <Button
+                onClick={() => setSelectedNodeData(null)}
+                sx={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  minWidth: 0,
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  color: '#06b6d4',
+                  bgcolor: '#e0f7fa',
+                  fontWeight: 'bold',
+                  fontSize: 22,
+                  boxShadow: '0 1px 4px rgba(6,182,212,0.12)',
+                  '&:hover': { bgcolor: '#b2f5ea', color: '#0e7490' },
+                }}
+              >
+                ×
+              </Button>
+               )}
+              {/* Render the info panel content based on the selected node */}
+              {renderInfoPanelContent(selectedNodeData)}
+            </Box>
+          </Paper>
 
-        <Paper elevation={3} sx={{ p: 3, borderRadius: '0 0 8px 8px' }}>
-          {activeTab === 0 && (
-            <SourceSection
-              sources={pipelineConfig.sources}
-              addSource={addSource}
-              editSource={editSource}
-              removeSource={removeSource}
-              getAvailableDatasets={getAvailableDatasets}
-            />
-          )}
 
-          {activeTab === 1 && (
-            <TransformationSection
-              transformations={pipelineConfig.transformations}
-              addTransformation={addTransformation}
-              editTransformation={editTransformation}
-              removeTransformation={removeTransformation}
-              getAvailableDatasets={getAvailableDatasets}
-            />
-          )}
 
-          {activeTab === 2 && (
-            <SinkSection
-              sinks={pipelineConfig.sinks}
-              addSink={addSink}
-              editSink={editSink}
-              removeSink={removeSink}
-              getAvailableDatasets={getAvailableDatasets}
-            />
-          )}
 
-          {activeTab === 3 && (
-            <ConfigViewer
-              pipelineConfig={pipelineConfig}
-              downloadConfig={downloadConfig}
-            />
-          )}
-        </Paper>
+      </div>
+      {error && (
+        <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md">
+          <p className="font-semibold">Error:</p>
+          <p>{error}</p>
+        </div>
+      )}
+    </div>
+   );
 
-        <GlobalActions
-          simulateRunPipeline={simulateRunPipeline}
-          loadConfigFromFile={loadConfigFromFile}
-        />
-      </Box> {/* End of main content wrapper */}
 
-      <Snackbar open={snackbarOpen} autoHideDuration={6000} onClose={handleSnackbarClose}>
-        <Alert onClose={handleSnackbarClose} severity={snackbarSeverity} sx={{ width: '100%' }}>
-          {snackbarMessage}
-        </Alert>
-      </Snackbar>
-    </Box>
-  );
 };
+
 export default App;
